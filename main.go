@@ -10,14 +10,16 @@ import (
 	"strings"
 )
 
+var s string
+var hosts []string
+
 func handler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
+	fmt.Fprintf(w, "Running hosts:  %v", hosts)
 }
 
 func handlerJoin(w http.ResponseWriter, r *http.Request) {
 	hostsStr := strings.Join(hosts, ",")
 	fmt.Fprintf(w, "%s", hostsStr)
-
 }
 
 func handlerUpdateHosts(w http.ResponseWriter, r *http.Request) {
@@ -40,8 +42,22 @@ func updateHostsToAll() {
 	}
 }
 
-var s string
-var hosts []string
+func joinCluster(joinTo string) string {
+	fmt.Printf("Calling /join to %s\n", joinTo)
+	endPoint := fmt.Sprintf("http://localhost:%s/join", joinTo)
+	resp, err := http.Get(endPoint)
+	if err != nil {
+		fmt.Println("Get err", err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	fmt.Println("response body:")
+	bodyStr := string(body)
+	fmt.Println(bodyStr)
+	hosts = strings.Split(bodyStr, ",")
+	newPort := ":500" + strconv.Itoa(len(hosts))
+	return newPort
+}
 
 func main() {
 	modeFlag := flag.String("mode", "", "mode: eg. create, join")
@@ -51,25 +67,11 @@ func main() {
 	joinTo := *joinToFlag
 	fmt.Println(mode)
 	fmt.Println(joinTo)
-	n := 0
 	port := "0"
 	s = "xxxx"
 
 	if mode == "join" {
-		fmt.Printf("Calling /join to %s\n", joinTo)
-		endPoint := fmt.Sprintf("http://localhost:%s/join", joinTo)
-		resp, err := http.Get(endPoint)
-		if err != nil {
-			fmt.Println("Get err", err)
-		}
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-		fmt.Println("response body:")
-		bodyStr := string(body)
-		fmt.Println(bodyStr)
-		hosts = strings.Split(bodyStr, ",")
-		n = len(hosts)
-		port = ":500" + strconv.Itoa(n)
+		port = joinCluster(joinTo)
 		hosts = append(hosts, port)
 		updateHostsToAll()
 	} else {
