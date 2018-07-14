@@ -61,6 +61,19 @@ func handlerReadFromAnotherHost(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func handlerUpdateFromAnotherHost(w http.ResponseWriter, r *http.Request) {
+	docID := strings.TrimPrefix(r.URL.Path, "/private/update/")
+
+	bodyIo, _ := ioutil.ReadAll(r.Body)
+	filename := fmt.Sprintf("/%s.json", docID)
+	err := ioutil.WriteFile(path+filename, bodyIo, 0644)
+	if err != nil {
+		fmt.Fprintf(w, "Update not success")
+	} else {
+		fmt.Fprintf(w, "Updated")
+	}
+}
+
 func handlerDeleteFromAnotherHost(w http.ResponseWriter, r *http.Request) {
 	ID := strings.TrimPrefix(r.URL.Path, "/private/delete/")
 	readPath := fmt.Sprintf("%s/%s.json", path, ID)
@@ -158,19 +171,6 @@ func handlerDelete(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Not found for delete")
 	} else {
 		fmt.Fprintf(w, "Deleted: %s", ID)
-	}
-}
-
-func handlerUpdateFromAnotherHost(w http.ResponseWriter, r *http.Request) {
-	docID := strings.TrimPrefix(r.URL.Path, "/private/update/")
-
-	bodyIo, _ := ioutil.ReadAll(r.Body)
-	filename := fmt.Sprintf("/%s.json", docID)
-	err := ioutil.WriteFile(path+filename, bodyIo, 0644)
-	if err != nil {
-		fmt.Fprintf(w, "Update not success")
-	} else {
-		fmt.Fprintf(w, "Updated")
 	}
 }
 
