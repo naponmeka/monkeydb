@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -60,6 +61,17 @@ func handlerReadFromAnotherHost(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func handlerDeleteFromAnotherHost(w http.ResponseWriter, r *http.Request) {
+	ID := strings.TrimPrefix(r.URL.Path, "/private/delete/")
+	readPath := fmt.Sprintf("%s/%s.json", path, ID)
+	err := os.Remove(readPath)
+	if err != nil {
+		fmt.Fprintf(w, "Not Found")
+	} else {
+		fmt.Fprintf(w, "Deleted")
+	}
+}
+
 func findDocFromHosts(ID string) (string, error) {
 	// broadcast
 	for _, host := range hosts {
@@ -97,6 +109,25 @@ func updateDocFromHosts(ID string, newData string) error {
 	return errors.New("Cannot update doc(not exists in cluster)")
 }
 
+func deleteDocFromHosts(ID string) error {
+	//broadcast
+	for _, host := range hosts {
+		endPointDelete := fmt.Sprintf("http://localhost%s/private/delete/%s", host, ID)
+		resp, err := http.Get(endPointDelete)
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			data, _ := ioutil.ReadAll(resp.Body)
+			dataStr := string(data)
+			fmt.Println("updateDocFromHosts.datastr", dataStr)
+			if dataStr == "Deleted" {
+				return nil
+			}
+		}
+	}
+	return errors.New("Cannot delete doc(not exists in cluster)")
+}
+
 func handlerRead(w http.ResponseWriter, r *http.Request) {
 	ID := strings.TrimPrefix(r.URL.Path, "/read/")
 	data, err := findDocFromHosts(ID)
@@ -116,6 +147,17 @@ func handlerUpdate(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Not found for update")
 	} else {
 		fmt.Fprintf(w, "Updated")
+	}
+}
+
+func handlerDelete(w http.ResponseWriter, r *http.Request) {
+	ID := strings.TrimPrefix(r.URL.Path, "/delete/")
+	fmt.Println("handlerDelete", ID)
+	err := deleteDocFromHosts(ID)
+	if err != nil {
+		fmt.Fprintf(w, "Not found for delete")
+	} else {
+		fmt.Fprintf(w, "Deleted: %s", ID)
 	}
 }
 
@@ -190,6 +232,8 @@ func main() {
 	http.HandleFunc("/private/read/", handlerReadFromAnotherHost)
 	http.HandleFunc("/update/", handlerUpdate)
 	http.HandleFunc("/private/update/", handlerUpdateFromAnotherHost)
+	http.HandleFunc("/delete/", handlerDelete)
+	http.HandleFunc("/private/delete/", handlerDeleteFromAnotherHost)
 	http.HandleFunc("/", handler)
 	fmt.Printf("Process started on port: %s", port)
 	fmt.Printf("Hosts: %+v", hosts)
