@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/md5"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,6 +18,22 @@ import (
 
 var s, path string
 var hosts []string
+
+func compress(str string) string {
+	result := str
+	strToReplace := [...]string{"\n", "\t", "\r", "\\"}
+	for _, v := range strToReplace {
+		result = strings.Replace(result, v, "", -1)
+	}
+	return result
+}
+
+func injectID(rawJson string, id string) string {
+	injectStr := fmt.Sprintf("\"_id\":\"%s\"", id)
+	injectStrWithOpenBraces := fmt.Sprintf("{%s", injectStr)
+	result := strings.Replace(rawJson, "{", injectStrWithOpenBraces, 1)
+	return result
+}
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Running hosts:  %v", hosts)
@@ -37,12 +54,14 @@ func handlerUpdateHosts(w http.ResponseWriter, r *http.Request) {
 
 func handlerCreate(w http.ResponseWriter, r *http.Request) {
 	bodyIo, _ := ioutil.ReadAll(r.Body)
+	bodyStr := compress(string(bodyIo))
 	t := time.Now()
 	h := md5.New()
-	io.WriteString(h, string(bodyIo))
+	io.WriteString(h, bodyStr)
 	docID := fmt.Sprintf("%s_%x", t.Format("20060102150405"), h.Sum(nil))
+	bodyStr = injectID(bodyStr, docID)
 	filename := fmt.Sprintf("/%s.json", docID)
-	err := ioutil.WriteFile(path+filename, bodyIo, 0644)
+	err := ioutil.WriteFile(path+filename, []byte(bodyStr), 0644)
 	if err != nil {
 		fmt.Fprintf(w, "Create not success")
 	} else {
@@ -151,6 +170,61 @@ func handlerRead(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func handlerReadAllFromAnotherHosts(w http.ResponseWriter, r *http.Request) {
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	result := []string{}
+	for _, f := range files {
+		filePath := fmt.Sprintf("%s/%s", path, f.Name())
+		data, err := ioutil.ReadFile(filePath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		dataStr := string(data)
+		result = append(result, dataStr)
+	}
+	jsonResult, err := json.Marshal(result)
+	fmt.Fprintf(w, string(jsonResult))
+}
+
+func findAllDocsFromHosts() ([]string, error) {
+	result := []string{}
+	// broadcast
+	for _, host := range hosts {
+		endPointRead := fmt.Sprintf("http://localhost%s/private/readall", host)
+		fmt.Println(endPointRead)
+		resp, err := http.Get(endPointRead)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			data, _ := ioutil.ReadAll(resp.Body)
+			dataStr := string(data)
+			dataSlice := []string{}
+			err = json.Unmarshal([]byte(dataStr), &dataSlice)
+			result = append(result, dataSlice...)
+		}
+	}
+
+	return result, nil
+}
+
+func handlerReadAll(w http.ResponseWriter, r *http.Request) {
+	data, err := findAllDocsFromHosts()
+	if err != nil {
+		fmt.Fprintf(w, "Not found in cluster")
+	} else {
+		jsonResult, err := json.Marshal(data)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			fmt.Fprintf(w, string(jsonResult))
+		}
+	}
+}
+
 func handlerUpdate(w http.ResponseWriter, r *http.Request) {
 	ID := strings.TrimPrefix(r.URL.Path, "/update/")
 	fmt.Println("handlerUpdate", ID)
@@ -205,7 +279,7 @@ func joinCluster(joinTo string) string {
 
 func main() {
 	modeFlag := flag.String("mode", "", "mode: eg. create, join")
-	joinToFlag := flag.String("join", "", "join: :5000")
+	joinToFlag := flag.String("join", "", "join: 5000")
 	pathFlag := flag.String("path", "", "eg ./tmp/something/")
 	flag.Parse()
 	mode := *modeFlag
@@ -230,6 +304,8 @@ func main() {
 	http.HandleFunc("/create", handlerCreate)
 	http.HandleFunc("/read/", handlerRead)
 	http.HandleFunc("/private/read/", handlerReadFromAnotherHost)
+	http.HandleFunc("/readall/", handlerReadAll)
+	http.HandleFunc("/private/readall/", handlerReadAllFromAnotherHosts)
 	http.HandleFunc("/update/", handlerUpdate)
 	http.HandleFunc("/private/update/", handlerUpdateFromAnotherHost)
 	http.HandleFunc("/delete/", handlerDelete)
