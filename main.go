@@ -78,6 +78,24 @@ func findDocFromHosts(ID string) (string, error) {
 	}
 	return "", errors.New("Not Found")
 }
+func updateDocFromHosts(ID string, newData string) error {
+	//broadcast
+	for _, host := range hosts {
+		endPointUpdate := fmt.Sprintf("http://localhost%s/private/update/%s", host, ID)
+		resp, err := http.Post(endPointUpdate, "raw", strings.NewReader(newData))
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			data, _ := ioutil.ReadAll(resp.Body)
+			dataStr := string(data)
+			fmt.Println("updateDocFromHosts.datastr", dataStr)
+			if dataStr == "Updated" {
+				return nil
+			}
+		}
+	}
+	return errors.New("Cannot update doc(not exists in cluster)")
+}
 
 func handlerRead(w http.ResponseWriter, r *http.Request) {
 	ID := strings.TrimPrefix(r.URL.Path, "/read/")
@@ -86,6 +104,31 @@ func handlerRead(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Not found in cluster")
 	} else {
 		fmt.Fprintf(w, data)
+	}
+}
+
+func handlerUpdate(w http.ResponseWriter, r *http.Request) {
+	ID := strings.TrimPrefix(r.URL.Path, "/update/")
+	fmt.Println("handlerUpdate", ID)
+	bodyIo, _ := ioutil.ReadAll(r.Body)
+	err := updateDocFromHosts(ID, string(bodyIo))
+	if err != nil {
+		fmt.Fprintf(w, "Not found for update")
+	} else {
+		fmt.Fprintf(w, "Updated")
+	}
+}
+
+func handlerUpdateFromAnotherHost(w http.ResponseWriter, r *http.Request) {
+	docID := strings.TrimPrefix(r.URL.Path, "/private/update/")
+
+	bodyIo, _ := ioutil.ReadAll(r.Body)
+	filename := fmt.Sprintf("/%s.json", docID)
+	err := ioutil.WriteFile(path+filename, bodyIo, 0644)
+	if err != nil {
+		fmt.Fprintf(w, "Update not success")
+	} else {
+		fmt.Fprintf(w, "Updated")
 	}
 }
 
@@ -145,6 +188,8 @@ func main() {
 	http.HandleFunc("/create", handlerCreate)
 	http.HandleFunc("/read/", handlerRead)
 	http.HandleFunc("/private/read/", handlerReadFromAnotherHost)
+	http.HandleFunc("/update/", handlerUpdate)
+	http.HandleFunc("/private/update/", handlerUpdateFromAnotherHost)
 	http.HandleFunc("/", handler)
 	fmt.Printf("Process started on port: %s", port)
 	fmt.Printf("Hosts: %+v", hosts)
