@@ -260,14 +260,13 @@ func handlerReadAll(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			fmt.Fprintf(w, "Not found in cluster")
 		} else {
-			// var rawResult []interface{}
-			// for _, v := range data {
-			// 	var objmap map[string]interface{}
-			// 	_ = json.Unmarshal([]byte(v), &objmap)
-			// 	rawResult = append(rawResult, objmap)
-			// }
-			// jsonResult, err := json.Marshal(rawResult)
-			jsonResult, err := json.Marshal(data)
+			var rawResult []interface{}
+			for _, v := range data {
+				var objmap map[string]interface{}
+				_ = json.Unmarshal([]byte(v), &objmap)
+				rawResult = append(rawResult, objmap)
+			}
+			jsonResult, err := json.Marshal(rawResult)
 			failOnError(err)
 			fmt.Fprintf(w, string(jsonResult))
 		}
