@@ -122,6 +122,7 @@ func findDocFromHosts(ID string) (string, error) {
 	}
 	return "", errors.New("Not Found")
 }
+
 func updateDocFromHosts(ID string, newData string) error {
 	//broadcast
 	for _, host := range hosts {
