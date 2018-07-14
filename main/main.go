@@ -28,11 +28,16 @@ func compress(str string) string {
 	return result
 }
 
-func injectID(rawJson string, id string) string {
+func injectID(rawJSON string, id string) string {
 	injectStr := fmt.Sprintf("\"_id\":\"%s\"", id)
 	injectStrWithOpenBraces := fmt.Sprintf("{%s", injectStr)
-	result := strings.Replace(rawJson, "{", injectStrWithOpenBraces, 1)
+	result := strings.Replace(rawJSON, "{", injectStrWithOpenBraces, 1)
 	return result
+}
+
+func isJSON(s string) bool {
+	var js map[string]interface{}
+	return json.Unmarshal([]byte(s), &js) == nil
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -55,17 +60,21 @@ func handlerUpdateHosts(w http.ResponseWriter, r *http.Request) {
 func handlerCreate(w http.ResponseWriter, r *http.Request) {
 	bodyIo, _ := ioutil.ReadAll(r.Body)
 	bodyStr := compress(string(bodyIo))
-	t := time.Now()
-	h := md5.New()
-	io.WriteString(h, bodyStr)
-	docID := fmt.Sprintf("%s_%x", t.Format("20060102150405"), h.Sum(nil))
-	bodyStr = injectID(bodyStr, docID)
-	filename := fmt.Sprintf("/%s.json", docID)
-	err := ioutil.WriteFile(path+filename, []byte(bodyStr), 0644)
-	if err != nil {
-		fmt.Fprintf(w, "Create not success")
+	if isJSON(bodyStr) {
+		t := time.Now()
+		h := md5.New()
+		io.WriteString(h, bodyStr)
+		docID := fmt.Sprintf("%s_%x", t.Format("20060102150405"), h.Sum(nil))
+		bodyStr = injectID(bodyStr, docID)
+		filename := fmt.Sprintf("/%s.json", docID)
+		err := ioutil.WriteFile(path+filename, []byte(bodyStr), 0644)
+		if err != nil {
+			fmt.Fprintf(w, "Create not success")
+		} else {
+			fmt.Fprintf(w, "Create %s", docID)
+		}
 	} else {
-		fmt.Fprintf(w, "Create %s", docID)
+		fmt.Fprintf(w, "Input is not valid json")
 	}
 }
 
