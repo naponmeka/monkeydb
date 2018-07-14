@@ -14,10 +14,25 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/thedevsaddam/gojsonq"
 )
 
 var s, path string
 var hosts []string
+
+func failOnError(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func failOnError2(err error, msg string) {
+	if err != nil {
+		fmt.Println(msg)
+		log.Fatal(err)
+	}
+}
 
 func compress(str string) string {
 	result := str
@@ -29,7 +44,7 @@ func compress(str string) string {
 }
 
 func injectID(rawJSON string, id string) string {
-	injectStr := fmt.Sprintf("\"_id\":\"%s\"", id)
+	injectStr := fmt.Sprintf("\"_id\":\"%s\",", id)
 	injectStrWithOpenBraces := fmt.Sprintf("{%s", injectStr)
 	result := strings.Replace(rawJSON, "{", injectStrWithOpenBraces, 1)
 	return result
@@ -119,14 +134,11 @@ func findDocFromHosts(ID string) (string, error) {
 		endPointRead := fmt.Sprintf("http://localhost%s/private/read/%s", host, ID)
 		fmt.Println(endPointRead)
 		resp, err := http.Get(endPointRead)
-		if err != nil {
-			fmt.Println(err)
-		} else {
-			data, _ := ioutil.ReadAll(resp.Body)
-			dataStr := string(data)
-			if dataStr != "Not Found" {
-				return dataStr, nil
-			}
+		failOnError(err)
+		data, _ := ioutil.ReadAll(resp.Body)
+		dataStr := string(data)
+		if dataStr != "Not Found" {
+			return dataStr, nil
 		}
 	}
 	return "", errors.New("Not Found")
@@ -181,57 +193,86 @@ func handlerRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlerReadAllFromAnotherHosts(w http.ResponseWriter, r *http.Request) {
+	body, err := ioutil.ReadAll(r.Body)
+	failOnError(err)
+	var filterMap map[string]interface{}
+	err = json.Unmarshal(body, &filterMap)
+	failOnError(err)
 	files, err := ioutil.ReadDir(path)
-	if err != nil {
-		log.Fatal(err)
-	}
+	failOnError(err)
 
 	result := []string{}
 	for _, f := range files {
 		filePath := fmt.Sprintf("%s/%s", path, f.Name())
 		data, err := ioutil.ReadFile(filePath)
-		if err != nil {
-			log.Fatal(err)
-		}
+		failOnError(err)
 		dataStr := string(data)
-		result = append(result, dataStr)
+		matched := true
+		for k, v := range filterMap {
+			fieldValue := gojsonq.New().JSONString(dataStr).Find(k)
+			if fieldValue != v {
+				matched = false
+			}
+		}
+		if matched {
+			result = append(result, dataStr)
+		}
 	}
 	jsonResult, err := json.Marshal(result)
 	fmt.Fprintf(w, string(jsonResult))
 }
 
-func findAllDocsFromHosts() ([]string, error) {
+func findAllDocsFromHosts(filterJSON string) ([]string, error) {
 	result := []string{}
 	// broadcast
 	for _, host := range hosts {
-		endPointRead := fmt.Sprintf("http://localhost%s/private/readall", host)
-		fmt.Println(endPointRead)
-		resp, err := http.Get(endPointRead)
-		if err != nil {
-			log.Fatal(err)
-		} else {
-			data, _ := ioutil.ReadAll(resp.Body)
-			dataStr := string(data)
-			dataSlice := []string{}
-			err = json.Unmarshal([]byte(dataStr), &dataSlice)
-			result = append(result, dataSlice...)
-		}
+		endPointRead := fmt.Sprintf("http://localhost%s/private/readall/", host)
+		fmt.Println("Endpoint:", endPointRead)
+		fmt.Println("Filter:", filterJSON)
+		resp, err := http.Post(endPointRead, "raw", strings.NewReader(filterJSON))
+		failOnError(err)
+		data, err := ioutil.ReadAll(resp.Body)
+		failOnError(err)
+		dataStr := string(data)
+		dataSlice := []string{}
+		err = json.Unmarshal([]byte(dataStr), &dataSlice)
+		failOnError(err)
+		result = append(result, dataSlice...)
 	}
 
 	return result, nil
 }
 
 func handlerReadAll(w http.ResponseWriter, r *http.Request) {
-	data, err := findAllDocsFromHosts()
-	if err != nil {
-		fmt.Fprintf(w, "Not found in cluster")
+	body, err := ioutil.ReadAll(r.Body)
+	failOnError(err)
+	bodyStr := string(body)
+
+	var filterJSON string
+	if bodyStr == "" {
+		filterJSON = `{}`
 	} else {
-		jsonResult, err := json.Marshal(data)
+		filterJSON = compress(bodyStr)
+	}
+
+	if isJSON(filterJSON) {
+		data, err := findAllDocsFromHosts(filterJSON)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Fprintf(w, "Not found in cluster")
 		} else {
+			// var rawResult []interface{}
+			// for _, v := range data {
+			// 	var objmap map[string]interface{}
+			// 	_ = json.Unmarshal([]byte(v), &objmap)
+			// 	rawResult = append(rawResult, objmap)
+			// }
+			// jsonResult, err := json.Marshal(rawResult)
+			jsonResult, err := json.Marshal(data)
+			failOnError(err)
 			fmt.Fprintf(w, string(jsonResult))
 		}
+	} else {
+		fmt.Fprintf(w, "Not valid json")
 	}
 }
 
@@ -264,9 +305,7 @@ func updateHostsToAll() {
 		fmt.Println(endPointUpdate)
 		hostsStr := strings.Join(hosts, ",")
 		_, err := http.Post(endPointUpdate, "raw", strings.NewReader(hostsStr))
-		if err != nil {
-			fmt.Println(err)
-		}
+		failOnError(err)
 	}
 }
 
@@ -321,7 +360,7 @@ func main() {
 	http.HandleFunc("/delete/", handlerDelete)
 	http.HandleFunc("/private/delete/", handlerDeleteFromAnotherHost)
 	http.HandleFunc("/", handler)
-	fmt.Printf("Process started on port: %s", port)
-	fmt.Printf("Hosts: %+v", hosts)
+	fmt.Printf("Process started on port: %s\n", port)
+	fmt.Printf("Hosts: %+v\n", hosts)
 	log.Fatal(http.ListenAndServe(port, nil))
 }
