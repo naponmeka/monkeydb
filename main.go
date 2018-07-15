@@ -108,8 +108,9 @@ func handlerUpdateFromAnotherHost(w http.ResponseWriter, r *http.Request) {
 	docID := strings.TrimPrefix(r.URL.Path, "/private/update/")
 
 	bodyIo, _ := ioutil.ReadAll(r.Body)
+	bodyStr = compress(string(bodyIo))
 	filename := fmt.Sprintf("/%s.json", docID)
-	err := ioutil.WriteFile(path+filename, bodyIo, 0644)
+	err := ioutil.WriteFile(path+filename, []byte(bodyStr), 0644)
 	if err != nil {
 		fmt.Fprintf(w, "Update not success")
 	} else {
@@ -257,6 +258,7 @@ func handlerReadAll(w http.ResponseWriter, r *http.Request) {
 
 	if isJSON(filterJSON) {
 		data, err := findAllDocsFromHosts(filterJSON)
+		fmt.Println(data)
 		if err != nil {
 			fmt.Fprintf(w, "Not found in cluster")
 		} else {
